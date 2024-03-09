@@ -17,6 +17,10 @@ export interface BaseRequestOptions {
     parentOwner?: IWalletRecord;
     disableMiningChalk?: boolean;
     disableautoencode?: boolean;
+    gpu?: boolean;
+    sequence?: number;
+    time?: number;
+    difficulty?: string;
 }
 
 export const BASE_REQUEST_OPTS_DEFAULTS = {
