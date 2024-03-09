@@ -38,6 +38,9 @@ const ECPair: ECPairAPI = ECPairFactory(tinysecp);
 
 interface WorkerInput {
     copiedData: AtomicalsPayload;
+    gpu: boolean;
+    time: number;
+    difficulty: string;
     seqStart: number;
     seqEnd: number;
     workerOptions: AtomicalOperationBuilderOptions;
@@ -56,6 +59,9 @@ if (parentPort) {
         // Extract parameters from the message
         const {
             copiedData,
+            gpu,
+            time,
+            difficulty,
             seqStart,
             seqEnd,
             workerOptions,
@@ -76,7 +82,7 @@ if (parentPort) {
         const fundingKeypairRaw = ECPair.fromWIF(fundingWIF);
         const fundingKeypair = getKeypairInfo(fundingKeypairRaw);
 
-        copiedData["args"]["time"] = Math.floor(Date.now() / 1000);
+        //copiedData["args"]["time"] = Math.floor(Date.now() / 1000);
 
         let atomPayload = new AtomicalsPayload(copiedData);
 
@@ -180,6 +186,19 @@ if (parentPort) {
 
             // Extract the transaction and get its ID
             prelimTx = psbtStart.extractTransaction(true);
+            let buffer = prelimTx.getBuffer();
+            if (gpu) {
+                //console.log('buffer data:', buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46])
+                console.log('buffer data:', prelimTx.getBuffer().toString('hex'));
+                console.log('difficulty:',);
+                console.log('time:', copiedData["args"]["time"]);
+                console.log('bitwork info:', workerBitworkInfoCommit)
+                parentPort!.postMessage({
+                    copiedData,
+                    finalSequence: 0,
+                });
+                return;
+            }
             const checkTxid = prelimTx.getId();
 
             // Check if there is a valid proof of work

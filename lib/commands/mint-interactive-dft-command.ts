@@ -104,6 +104,12 @@ export class MintInteractiveDftCommand implements CommandInterface {
       meta: this.options.meta,
       ctx: this.options.ctx,
       init: this.options.init,
+      dftOptions2: {
+        gpu: this.options.gpu,
+        sequence: this.options.sequence,
+        time: this.options.time,
+        difficulty: this.options.difficulty,
+      }
     });
 
     // Attach any default data

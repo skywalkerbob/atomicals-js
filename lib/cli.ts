@@ -1694,10 +1694,14 @@ program.command('mint-dft')
   .description('Mint coins for a decentralized fungible token (FT)')
   .argument('<ticker>', 'string')
   .option('--rbf', 'Whether to enable RBF for transactions.')
+  .option('--gpu', 'Get GPU data for mining.')
   .option('--initialowner <string>', 'Assign claimed tokens into this address')
   .option('--funding <string>', 'Use wallet alias wif key to be used for funding and change')
   .option('--current', 'Mine the current bitwork. If disabled mines the next.')
   .option('--satsbyte <number>', 'Satoshis per byte in fees', '-1')
+  .option('--sequence <number>', 'Set start sequence', '0')
+  .option('--time <number>', 'Set start time', '-1')
+  .option('--difficulty <string>', 'Set difficulty')
   .option('--disablechalk', 'Whether to disable the real-time chalked logging of each hash for Bitwork mining. Improvements mining performance to set this flag')
   .action(async (ticker, options) => {
     try {
@@ -1711,6 +1715,10 @@ program.command('mint-dft')
         rbf: options.rbf,
         satsbyte: parseInt(options.satsbyte, 10),
         disableMiningChalk: options.disablechalk,
+        gpu: options.gpu,
+        sequence: parseInt(options.sequence, 10),
+        time: parseInt(options.time, 10),
+        difficulty: options.difficulty
       }, walletAddress, ticker, fundingRecord.WIF, options.current ? true : false);
       handleResultLogging(result, true);
     } catch (error) {

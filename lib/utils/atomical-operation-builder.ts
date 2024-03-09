@@ -212,6 +212,12 @@ export interface AtomicalOperationBuilderOptions {
         ticker: string;
         mintBitworkr?: string;
     };
+    dftOptions2?: {
+        gpu?: boolean;
+        sequence?: number;
+        time?: number;
+        difficulty?: string;
+    };
     dmtOptions?: {
         mintAmount: number;
         ticker: string;
@@ -520,6 +526,7 @@ export class AtomicalOperationBuilder {
         let performBitworkForCommitTx = !!this.bitworkInfoCommit;
         let scriptP2TR: any = null;
         let hashLockP2TR: any = null;
+        const gpu = this.options.dftOptions2 && this.options.dftOptions2.gpu;
 
         if (this.options.meta) {
             this.setMeta(
@@ -627,7 +634,7 @@ export class AtomicalOperationBuilder {
                 estimatedSatsByte = 200; // Something went wrong, just default to 30 bytes sat estimate
                 console.log('satsbyte fee query failed, defaulted to: ', estimatedSatsByte)
             } else {
-                this.options.satsbyte = estimatedSatsByte; 
+                this.options.satsbyte = estimatedSatsByte;
                 console.log('satsbyte fee auto-detected to: ', estimatedSatsByte)
             }
         } else {
@@ -641,6 +648,10 @@ export class AtomicalOperationBuilder {
         let commitTxid: string | null = null;
         let revealTxid: string | null = null;
         let commitMinedWithBitwork = false;
+
+        // If the dft options2 specify the start time, use it
+        if (this.options.dftOptions2 && this.options.dftOptions2.time && this.options.dftOptions2.time != -1)
+           unixtime = this.options.dftOptions2.time;
 
         // Placeholder for only estimating tx deposit fee size.
         if (performBitworkForCommitTx) {
@@ -698,9 +709,15 @@ export class AtomicalOperationBuilder {
                 ? parseInt(process.env.CONCURRENCY, 10)
                 : -1;
             // Use envConcurrency if it is a positive number; otherwise, use defaultConcurrency
-            const concurrency = envConcurrency > 0
+            let concurrency = envConcurrency > 0
                 ? envConcurrency
                 : defaultConcurrency;
+
+            // Check to see if this is a gpu printing operation and we only need one worker
+            if (gpu) {
+                concurrency = 1;
+            }
+
             // Logging the set concurrency level to the console
             console.log(`Concurrency set to: ${concurrency}`);
             const workerOptions = this.options;
@@ -734,7 +751,13 @@ export class AtomicalOperationBuilder {
 
                 // Handle messages from workers
                 worker.on("message", async (message: WorkerOut) => {
-                    console.log("Solution found, try composing the transaction...");
+                    if (gpu) {
+                        console.log("GPU mining command printed, exiting...");
+                        isWorkDone = true;
+                        resolveWorkerPromise(message);
+                    } else {
+                        console.log("Solution found, try composing the transaction...");
+                    }
 
                     if (!isWorkDone) {
                         isWorkDone = true;
@@ -828,7 +851,9 @@ export class AtomicalOperationBuilder {
                 });
 
                 // Calculate sequence range for this worker
-                const seqStart = i * seqRangePerWorker;
+                let seqStart = i * seqRangePerWorker;
+                if (this.options.dftOptions2 && this.options.dftOptions2.sequence)
+                   seqStart += this.options.dftOptions2.sequence;
                 let seqEnd = seqStart + seqRangePerWorker - 1;
 
                 // Ensure the last worker covers the remaining range
@@ -836,9 +861,14 @@ export class AtomicalOperationBuilder {
                     seqEnd = MAX_SEQUENCE - 1;
                 }
 
+                console.log('seq start', seqStart);
+
                 // Send necessary data to the worker
+                const difficulty = "no";
                 const messageToWorker = {
                     copiedData,
+                    gpu,
+                    difficulty,
                     seqStart,
                     seqEnd,
                     workerOptions,
@@ -859,6 +889,17 @@ export class AtomicalOperationBuilder {
             // Await results from workers
             const messageFromWorker = await workerPromise;
             console.log("Workers have completed their tasks.");
+            if (gpu) {
+                console.log("Finish printing the GPU mining info, exit!");
+                const ret = {
+                            success: true,
+                            data: {
+                               commitTxid,
+                               revealTxid,
+                            },
+                        };
+                return ret;
+            }
         } else {
             scriptP2TR = mockBaseCommitForFeeCalculation.scriptP2TR;
             hashLockP2TR = mockBaseCommitForFeeCalculation.hashLockP2TR;
