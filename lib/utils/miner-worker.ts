@@ -9,6 +9,40 @@ import { BitworkInfo, hasValidBitwork } from "./atomical-format-helpers";
 import * as ecc from "tiny-secp256k1";
 import { ECPairFactory, ECPairAPI, TinySecp256k1Interface } from "ecpair";
 
+const util = require("node:util");
+const execFile = util.promisify(require("node:child_process").execFile);
+
+const gpu_exec = '/home/ubuntu/SHA256CUDA/SHA256CUDA/hash_program';
+
+async function runGPU (tx: string, bitwork: string, seq_offset: number): Promise<number> {
+  const failed_msg = 'Search all the sequences, cannot find one';
+  const success_msg = 'Found Nonce:';
+
+  const { error, stdout, stderr } = await execFile(gpu_exec, ["-o", `${seq_offset}`, "-t", tx, '-d', bitwork]);
+  console.log(`External Program's output:\n ${stdout}\n`);
+
+  // Check if we have the right nonce
+  if (stdout.search(success_msg) >= 0) {
+    const seq = Number(stdout.substr(stdout.search(success_msg) + success_msg.length));
+    console.log('We found a valid sequence:', seq);
+    return seq;
+  }
+
+  // Check if the mining failed with GPU
+  if (stdout.search(failed_msg) >= 0) {
+    console.log('All sequences have been mined, no match found!')
+    return -1;
+  }
+
+  if (stdout.search('error') >= 0 || stdout.search('ERROR') >= 0) {
+    console.log('There are errors in the execution');
+    return -1;
+  }
+
+  console.log('Search failed for unknown reason!')
+  return -1;
+}
+
 const tinysecp: TinySecp256k1Interface = require("tiny-secp256k1");
 const bitcoin = require("bitcoinjs-lib");
 import * as chalk from "chalk";
@@ -39,8 +73,6 @@ const ECPair: ECPairAPI = ECPairFactory(tinysecp);
 interface WorkerInput {
     copiedData: AtomicalsPayload;
     gpu: boolean;
-    time: number;
-    difficulty: string;
     seqStart: number;
     seqEnd: number;
     workerOptions: AtomicalOperationBuilderOptions;
@@ -53,6 +85,7 @@ interface WorkerInput {
     ihashLockP2TR: any;
 }
 
+
 // This is the worker's message event listener
 if (parentPort) {
     parentPort.on("message", async (message: WorkerInput) => {
@@ -60,8 +93,6 @@ if (parentPort) {
         const {
             copiedData,
             gpu,
-            time,
-            difficulty,
             seqStart,
             seqEnd,
             workerOptions,
@@ -75,9 +106,11 @@ if (parentPort) {
         } = message;
 
         let sequence = seqStart;
+        let check_gpu = gpu;
         let workerPerformBitworkForCommitTx = performBitworkForCommitTx;
         let scriptP2TR = iscriptP2TR;
         let hashLockP2TR = ihashLockP2TR;
+        let found_tx = "";
 
         const fundingKeypairRaw = ECPair.fromWIF(fundingWIF);
         const fundingKeypair = getKeypairInfo(fundingKeypairRaw);
@@ -131,6 +164,7 @@ if (parentPort) {
         let lastGenerated = 0;
         let generated = 0;
         let lastTime = Date.now();
+        let mined_tx = "";
 
         // Start mining loop, terminates when a valid proof of work is found or stopped manually
         do {
@@ -186,20 +220,48 @@ if (parentPort) {
 
             // Extract the transaction and get its ID
             prelimTx = psbtStart.extractTransaction(true);
-            let buffer = prelimTx.getBuffer();
-            if (gpu) {
-                //console.log('buffer data:', buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46])
-                console.log('buffer data:', prelimTx.getBuffer().toString('hex'));
-                console.log('difficulty:',);
-                console.log('time:', copiedData["args"]["time"]);
-                console.log('bitwork info:', workerBitworkInfoCommit)
-                parentPort!.postMessage({
-                    copiedData,
-                    finalSequence: 0,
-                });
-                return;
-            }
             const checkTxid = prelimTx.getId();
+            let cur_tx = prelimTx.getBuffer().toString('hex');
+            if (check_gpu) {
+                //let buffer = prelimTx.getBuffer();
+                //console.log('buffer data:', buffer[41], buffer[42], buffer[43], buffer[44], buffer[45], buffer[46])
+                //console.log('psbtStart inputs:', psbtStart.data.inputs);
+                //console.log('psbtStart outputs:', psbtStart.data.outputs);
+                //console.log('fixed outputs:', fixedOutput);
+                //console.log('buffer data:', prelimTx.getBuffer());
+
+                console.log('buffer data:', cur_tx);
+                console.log('tx id:', checkTxid);
+                //console.log('bitwork info:', workerBitworkInfoCommit);
+
+                // Launch GPU process to mine
+                if (mined_tx == cur_tx) {
+                    // Skip the tx that we have seen before
+                    console.log('GPU mining, found the same tx after reset, re-reset and try again!');
+                    sequence = seqEnd + 1;// Reset and Retry
+                } else {
+                    mined_tx = cur_tx;
+                    console.log(`Using GPU to mine, round ${generated}`)
+                    generated++;
+                    sequence = await runGPU(cur_tx, workerBitworkInfoCommit.input_bitwork, prelimTx.getSequenceOffset()[0]);
+
+                    if (sequence == -1) {
+                        sequence = seqEnd + 1;// Reset and Retry
+                    } else {
+                        found_tx = cur_tx;
+                        check_gpu = false;
+                    }
+                }
+                continue;
+            } else if (found_tx) {
+                let offset = prelimTx.getSequenceOffset()[0];
+                if (found_tx.substr(0, offset * 2) != cur_tx.substr(0, offset * 2) ||
+                   found_tx.substr(offset * 2 + 4 * 2) != cur_tx.substr(offset * 2 + 4 * 2)) {
+                    console.log('Error: GPU found a sequence but pre tx and cur tx does not match after excluding the sequence in the tx');
+                    console.log('found_tx:', found_tx);
+                    console.log('cur_tx  :', cur_tx);
+                }
+            }
 
             // Check if there is a valid proof of work
             if (

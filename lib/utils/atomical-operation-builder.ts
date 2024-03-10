@@ -127,6 +127,18 @@ function logMiningProgressToConsole(
     process.stdout.write(chalk.red(txid, " nonces: ", nonces));
 }
 
+function askQuestion(query) : Promise<string> {
+    const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+    });
+
+    return new Promise(resolve => rl.question(query, ans => {
+        rl.close();
+        resolve(ans);
+    }))
+}
+
 function printBitworkLog(bitworkInfo: BitworkInfo, commit?: boolean) {
     if (!bitworkInfo) {
         return;
@@ -649,10 +661,6 @@ export class AtomicalOperationBuilder {
         let revealTxid: string | null = null;
         let commitMinedWithBitwork = false;
 
-        // If the dft options2 specify the start time, use it
-        if (this.options.dftOptions2 && this.options.dftOptions2.time && this.options.dftOptions2.time != -1)
-           unixtime = this.options.dftOptions2.time;
-
         // Placeholder for only estimating tx deposit fee size.
         if (performBitworkForCommitTx) {
             // Use zero nonce in order for recoverable real addresses.
@@ -751,13 +759,7 @@ export class AtomicalOperationBuilder {
 
                 // Handle messages from workers
                 worker.on("message", async (message: WorkerOut) => {
-                    if (gpu) {
-                        console.log("GPU mining command printed, exiting...");
-                        isWorkDone = true;
-                        resolveWorkerPromise(message);
-                    } else {
-                        console.log("Solution found, try composing the transaction...");
-                    }
+                    console.log("Solution found, try composing the transaction...");
 
                     if (!isWorkDone) {
                         isWorkDone = true;
@@ -864,11 +866,9 @@ export class AtomicalOperationBuilder {
                 console.log('seq start', seqStart);
 
                 // Send necessary data to the worker
-                const difficulty = "no";
                 const messageToWorker = {
                     copiedData,
                     gpu,
-                    difficulty,
                     seqStart,
                     seqEnd,
                     workerOptions,
@@ -889,6 +889,7 @@ export class AtomicalOperationBuilder {
             // Await results from workers
             const messageFromWorker = await workerPromise;
             console.log("Workers have completed their tasks.");
+            /*
             if (gpu) {
                 console.log("Finish printing the GPU mining info, exit!");
                 const ret = {
@@ -899,7 +900,7 @@ export class AtomicalOperationBuilder {
                             },
                         };
                 return ret;
-            }
+            }*/
         } else {
             scriptP2TR = mockBaseCommitForFeeCalculation.scriptP2TR;
             hashLockP2TR = mockBaseCommitForFeeCalculation.hashLockP2TR;
