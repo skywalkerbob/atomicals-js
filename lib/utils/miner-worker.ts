@@ -12,7 +12,7 @@ import { ECPairFactory, ECPairAPI, TinySecp256k1Interface } from "ecpair";
 const util = require("node:util");
 const execFile = util.promisify(require("node:child_process").execFile);
 
-const gpu_exec = '/home/ubuntu/SHA256CUDA/SHA256CUDA/hash_program';
+const gpu_exec = '/home/ubuntu/sha256_cuda/SHA256CUDA/hash_program';
 
 async function runGPU (tx: string, bitwork: string, seq_offset: number): Promise<number> {
   const failed_msg = 'Search all the sequences, cannot find one';
